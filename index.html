@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#c8321f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="CPR訓練">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<style>html{color-scheme:light dark}body{margin:0}</style>
+<title>CPR 訓練監測系統</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+/* Layout: one-column phone app. Status header, 2x2 metric tiles, live waveform, score card, controls. */
+:root {
+  --bg: #f2f5f3;
+  --card: #ffffff;
+  --fg: #16201a;
+  --muted: #5b6a61;
+  --line: #dce4df;
+  --ok-bg: #e5f4e9;  --ok-fg: #1d6a34;  --ok-pill: #c9e9d2;
+  --warn-bg: #fdf0d8; --warn-fg: #85560a; --warn-pill: #f8dfae;
+  --bad-bg: #fbe4e1;  --bad-fg: #a1261b;  --bad-pill: #f5c6c1;
+  --idle-bg: #eceff0; --idle-fg: #66736b; --idle-pill: #dde2e0;
+  --info-bg: #e8ecf9; --info-fg: #1f2a55;
+  --accent: #c8321f;  --accent-fg: #ffffff;
+  --wave: #1d6a34;
+  --font: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111613; --card: #1a211d; --fg: #e9f0ec; --muted: #95a59b; --line: #2b362f;
+    --ok-bg: #173323; --ok-fg: #7fd69a; --ok-pill: #1f4a31;
+    --warn-bg: #3a2c10; --warn-fg: #f0c273; --warn-pill: #54401a;
+    --bad-bg: #3d1b18; --bad-fg: #f19a92; --bad-pill: #5a2823;
+    --idle-bg: #222a25; --idle-fg: #95a59b; --idle-pill: #2f3a33;
+    --info-bg: #1b2240; --info-fg: #b9c4f0;
+    --accent: #e2503c; --accent-fg: #ffffff; --wave: #7fd69a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111613; --card: #1a211d; --fg: #e9f0ec; --muted: #95a59b; --line: #2b362f;
+  --ok-bg: #173323; --ok-fg: #7fd69a; --ok-pill: #1f4a31;
+  --warn-bg: #3a2c10; --warn-fg: #f0c273; --warn-pill: #54401a;
+  --bad-bg: #3d1b18; --bad-fg: #f19a92; --bad-pill: #5a2823;
+  --idle-bg: #222a25; --idle-fg: #95a59b; --idle-pill: #2f3a33;
+  --info-bg: #1b2240; --info-fg: #b9c4f0;
+  --accent: #e2503c; --accent-fg: #ffffff; --wave: #7fd69a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font);
+  padding-block: 18px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-tap-highlight-color: transparent;
+}
+.app { max-width: 440px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+h1 { font-size: 21px; font-weight: 900; margin: 0; letter-spacing: .02em; }
+.status { font-size: 14px; font-weight: 700; padding: 6px 14px; border-radius: 999px;
+  background: var(--idle-pill); color: var(--idle-fg); white-space: nowrap; }
+.status[data-s="sensor"] { background: var(--ok-pill); color: var(--ok-fg); }
+.status[data-s="demo"] { background: var(--warn-pill); color: var(--warn-fg); }
+.status[data-s="done"] { background: var(--info-bg); color: var(--info-fg); }
+
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tile { border-radius: 20px; padding: 16px 10px 14px; text-align: center; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: var(--idle-bg); color: var(--idle-fg); transition: background .2s, color .2s; }
+.tile .lab { font-size: 15px; font-weight: 500; opacity: .85; }
+.tile .val { font-size: 56px; font-weight: 900; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.tile .unit { font-size: 16px; font-weight: 500; opacity: .85; }
+.tile .badge { margin-top: 6px; font-size: 16px; font-weight: 700; padding: 4px 16px; border-radius: 999px; background: var(--idle-pill); min-height: 31px; }
+.tile[data-k="ok"]   { background: var(--ok-bg);   color: var(--ok-fg); }
+.tile[data-k="ok"] .badge   { background: var(--ok-pill); }
+.tile[data-k="warn"] { background: var(--warn-bg); color: var(--warn-fg); }
+.tile[data-k="warn"] .badge { background: var(--warn-pill); }
+.tile[data-k="bad"]  { background: var(--bad-bg);  color: var(--bad-fg); }
+.tile[data-k="bad"] .badge  { background: var(--bad-pill); }
+.tile.info { background: var(--info-bg); color: var(--info-fg); }
+.tile.info .val { color: var(--fg); }
+.seg { display: flex; gap: 8px; margin-top: 4px; }
+.seg button { min-height: 36px; padding: 6px 12px; font-size: 14px; border-radius: 999px; background: transparent;
+  color: var(--info-fg); border: 1.5px solid var(--info-fg); }
+.seg button[aria-pressed="true"] { background: var(--info-fg); color: var(--info-bg); }
+.seg button:disabled { opacity: .45; cursor: default; }
+
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 14px 16px; }
+.panel h2 { margin: 0 0 6px; font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .06em; }
+canvas { display: block; width: 100%; height: 84px; }
+.wavenote { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+.result { display: flex; flex-direction: column; gap: 6px; }
+.result h2 { font-size: 19px; color: var(--fg); letter-spacing: 0; margin: 0; }
+.score { font-size: 46px; font-weight: 900; line-height: 1.1; color: var(--ok-fg); font-variant-numeric: tabular-nums; }
+.score small { font-size: 26px; font-weight: 700; margin-left: 4px; }
+.score[data-k="warn"] { color: var(--warn-fg); }
+.score[data-k="bad"] { color: var(--bad-fg); }
+.score[data-k="idle"] { color: var(--idle-fg); }
+.detail { font-size: 14px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.note { font-size: 14px; color: var(--muted); margin: 0; }
+
+.msg { font-size: 14px; line-height: 1.55; padding: 10px 14px; border-radius: 14px; background: var(--warn-bg); color: var(--warn-fg); }
+
+.controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+button { font: inherit; font-size: 16px; font-weight: 700; border-radius: 16px; padding: 14px 10px; min-height: 52px;
+  border: 1.5px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+button:focus-visible, summary:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button.primary { grid-column: 1 / -1; background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-size: 18px; }
+button[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg); border-color: var(--info-fg); }
+button:active { transform: scale(.98); }
+
+details { font-size: 14px; color: var(--muted); }
+summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+details ul { margin: 8px 0 0; padding-left: 20px; line-height: 1.65; }
+.calib { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.calib input { flex: 1; min-width: 0; accent-color: var(--accent); }
+.calib output { min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; color: var(--fg); font-weight: 700; }
+.foot { font-size: 12.5px; line-height: 1.6; color: var(--muted); text-align: center; margin: 0; }
+@media (max-width: 360px) { .tile .val { font-size: 40px; } .result .l { min-width: 84px; } }
+@media (prefers-reduced-motion: reduce) { .tile { transition: none; } }
+
+/* ---- 單屏版面：按鍵、數據、波形、評分都在同一屏 ---- */
+[hidden] { display: none !important; }
+body { padding-block: 10px 16px; }
+.app { gap: 9px; }
+h1 { font-size: 19px; }
+.status { font-size: 13px; padding: 4px 12px; }
+.status[data-s="prep"] { background: var(--warn-pill); color: var(--warn-fg); }
+.controls { grid-template-columns: 1.5fr 1fr 1fr; gap: 8px; }
+.controls button { min-height: 46px; padding: 8px 6px; font-size: 15px; border-radius: 14px; }
+.controls button.primary { grid-column: auto; font-size: 17px; }
+.tiles { gap: 9px; }
+.tile { padding: 10px 8px; border-radius: 18px; gap: 0; }
+.tile .lab { font-size: 13px; }
+.tile .val { font-size: 46px; line-height: 1.05; }
+.tile .unit { font-size: 13px; }
+.tile .badge { margin-top: 4px; font-size: 14px; padding: 2px 14px; min-height: 26px; }
+.tile.small { flex-direction: row; justify-content: space-between; align-items: center; padding: 10px 14px; text-align: left; }
+.tile.small .col { display: flex; flex-direction: column; gap: 1px; align-items: flex-start; min-width: 0; }
+.tile.small .val { font-size: 30px; }
+.tile.small .seg { margin-top: 0; flex-direction: column; gap: 4px; }
+.tile.small .seg button { min-height: 28px; padding: 2px 10px; font-size: 12.5px; white-space: nowrap; }
+.panel { border-radius: 18px; padding: 10px 14px; }
+.panel h2 { font-size: 12px; margin: 0 0 4px; display: flex; justify-content: space-between; gap: 8px; }
+.panel h2 span { font-weight: 500; letter-spacing: 0; }
+.panel h2 em { font-style: normal; color: var(--accent); }
+.wavep { position: relative; }
+.wavep canvas { height: 130px; }
+.prep { position: absolute; left: 14px; right: 14px; bottom: 10px; height: 130px; border-radius: 12px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  background: color-mix(in srgb, var(--card) 90%, transparent); }
+.prep b { font-size: 64px; line-height: 1; color: var(--warn-fg); font-variant-numeric: tabular-nums; }
+.prep span { font-size: 13px; color: var(--muted); }
+.result { flex-direction: row; align-items: center; gap: 14px; }
+.result .l { display: flex; flex-direction: column; min-width: 96px; }
+.result .l h2 { font-size: 14px; margin: 0; color: var(--fg); letter-spacing: 0; display: block; }
+.score { font-size: 42px; }
+.score small { font-size: 20px; }
+.result .r { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.detail { font-size: 13px; gap: 10px; }
+.note { font-size: 12.5px; line-height: 1.45; }
+.more { padding: 0 4px; }
+.more summary { text-align: center; font-weight: 500; font-size: 12.5px; }
+.more .foot { margin-top: 12px; }
+</style>
+
+<style>body{padding-top:max(10px,env(safe-area-inset-top,0px));padding-bottom:max(16px,env(safe-area-inset-bottom,0px))}</style>
+</head><body>
+<main class="app">
+  <header>
+    <h1>CPR 訓練監測系統</h1>
+    <span id="status" class="status" data-s="idle">待機</span>
+  </header>
+
+  <div class="controls">
+    <button class="primary" id="btnMain" type="button">開始感測</button>
+    <button id="btnDemo" type="button">示範模式</button>
+    <button id="btnBeat" type="button" aria-pressed="false">節拍器 110</button>
+  </div>
+
+  <section class="tiles" aria-label="即時數據">
+    <div class="tile" id="tDepth" data-k="idle">
+      <span class="lab">按壓深度</span>
+      <span class="val" id="vDepth">--</span>
+      <span class="unit">公分</span>
+      <span class="badge" id="bDepth">等待按壓</span>
+    </div>
+    <div class="tile" id="tRate" data-k="idle">
+      <span class="lab">按壓速率</span>
+      <span class="val" id="vRate">--</span>
+      <span class="unit">次 / 分鐘</span>
+      <span class="badge" id="bRate">等待按壓</span>
+    </div>
+    <div class="tile info small">
+      <div class="col"><span class="lab">累計按壓</span><span class="val" id="vCount">0</span></div>
+      <span class="unit">次</span>
+    </div>
+    <div class="tile info small">
+      <div class="col"><span class="lab" id="lTime">訓練時間</span><span class="val" id="vTime">02:00</span></div>
+      <div class="seg" role="group" aria-label="選擇訓練時間">
+        <button type="button" data-d="60" aria-pressed="false">1 分鐘</button>
+        <button type="button" data-d="120" aria-pressed="true">2 分鐘</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel wavep" aria-label="按壓波形">
+    <h2><span>按壓波形（近 4 秒） <em id="beatHint"></em></span><span>目標 5–6 公分 · 100–120 次/分</span></h2>
+    <canvas id="wave" width="800" height="270"></canvas>
+    <div class="prep" id="prep" hidden><b id="prepN">5</b><span>準備中，請放好手機並保持不動</span></div>
+  </section>
+
+  <section class="panel result" aria-live="polite">
+    <div class="l"><h2 id="rTitle">訓練結果</h2><div class="score" id="score" data-k="idle">--<small>分</small></div></div>
+    <div class="r">
+      <div class="detail"><span id="dOkD">深度合格 --</span><span id="dOkR">速率合格 --</span></div>
+      <p class="note" id="rNote">按「開始感測」後，把手機放在假人胸口、雙手掌下方開始按壓。</p>
+    </div>
+  </section>
+
+  <div class="msg" id="msg" role="status" hidden></div>
+
+  <details class="more">
+    <summary>使用方式與深度校正</summary>
+    <ul>
+      <li>只用在 CPR 訓練假人，手機放在胸口與掌根之間，建議裝保護套。</li>
+      <li>按「開始感測」後有 5 秒倒數，請先放好手機並保持不動，倒數結束才開始按壓。</li>
+      <li>iPhone 需用 Safari 開啟，第一次按「開始感測」時請允許「動作與方向」。</li>
+      <li>深度由加速度計估算，會有誤差。拿尺量 5 公分壓幾下，再調整下方係數，讓顯示接近 5.0。</li>
+    </ul>
+    <div class="calib">
+      <label for="cal">深度係數</label>
+      <input id="cal" type="range" min="0.5" max="1.8" step="0.05" value="1">
+      <output id="calOut" for="cal">1.00</output>
+    </div>
+    <p class="foot">訓練輔助用途，深度僅供參考，不是醫療器材。實際急救請先撥 119，並使用 AED。</p>
+  </details>
+</main>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var DEPTH_MIN = 5.0, DEPTH_MAX = 6.0, RATE_MIN = 100, RATE_MAX = 120;
+  var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+
+  var S = { mode: 'idle', t0: 0, endAt: 0, count: 0, nR: 0, okD: 0, okR: 0,
+            bottoms: [], depths: [], lastBottom: 0, calib: 1, dur: 120, prep: false, prepEnd: 0 };
+  var gotMotion = false, wakeLock = null;
+
+  /* ---------- 校正係數 ---------- */
+  try { var c = parseFloat(localStorage.getItem('cpr_calib')); if (c >= 0.5 && c <= 1.8) S.calib = c; } catch (e) {}
+  $('cal').value = S.calib; $('calOut').textContent = S.calib.toFixed(2);
+  $('cal').addEventListener('input', function () {
+    S.calib = parseFloat(this.value); $('calOut').textContent = S.calib.toFixed(2);
+    try { localStorage.setItem('cpr_calib', String(S.calib)); } catch (e) {}
+  });
+
+  /* ---------- 訓練時間：1 分鐘 / 2 分鐘 ---------- */
+  try { var dd = parseInt(localStorage.getItem('cpr_dur'), 10); if (dd === 60 || dd === 120) S.dur = dd; } catch (e) {}
+  var segBtns = Array.prototype.slice.call(document.querySelectorAll('.seg button'));
+  function paintSeg() {
+    segBtns.forEach(function (b) {
+      b.setAttribute('aria-pressed', String(parseInt(b.dataset.d, 10) === S.dur));
+      b.disabled = S.mode === 'sensor';
+    });
+  }
+  segBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      S.dur = parseInt(b.dataset.d, 10);
+      try { localStorage.setItem('cpr_dur', String(S.dur)); } catch (e) {}
+      if (S.mode === 'demo') startDemo();
+      else { $('vTime').textContent = fmtTime(S.dur * 1000); paintSeg(); }
+    });
+  });
+  $('vTime').textContent = fmtTime(S.dur * 1000);
+
+  /* ---------- 畫面更新 ---------- */
+  function setStatus(s, text) { var el = $('status'); el.dataset.s = s; el.textContent = text; }
+  function showMsg(t) { var m = $('msg'); if (t) { m.textContent = t; m.hidden = false; } else { m.hidden = true; } }
+  function fmtTime(ms) { var s = Math.floor(ms / 1000); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
+
+  function depthState(d) {
+    if (d == null) return ['idle', '等待按壓'];
+    if (d < DEPTH_MIN) return [d < DEPTH_MIN - 1 ? 'bad' : 'warn', '太淺'];
+    if (d > DEPTH_MAX) return [d > DEPTH_MAX + 0.8 ? 'bad' : 'warn', '太深'];
+    return ['ok', '合格'];
+  }
+  function rateState(r) {
+    if (r == null) return ['idle', '等待按壓'];
+    if (r < RATE_MIN) return [r < RATE_MIN - 15 ? 'bad' : 'warn', '太慢'];
+    if (r > RATE_MAX) return [r > RATE_MAX + 15 ? 'bad' : 'warn', '太快'];
+    return ['ok', '合格'];
+  }
+  function paintTiles(d, r) {
+    var ds = depthState(d), rs = rateState(r);
+    $('tDepth').dataset.k = ds[0]; $('bDepth').textContent = ds[1];
+    $('tRate').dataset.k = rs[0]; $('bRate').textContent = rs[1];
+    $('vDepth').textContent = d == null ? '--' : d.toFixed(1);
+    $('vRate').textContent = r == null ? '--' : String(Math.round(r));
+  }
+  function score() {
+    if (!S.count) return null;
+    var d = S.okD / S.count, r = S.nR ? S.okR / S.nR : d;
+    return Math.round(100 * (0.5 * d + 0.5 * r));
+  }
+  function paintResult() {
+    var sc = S.mode === 'done' ? score() : null, el = $('score');
+    if (sc == null) { el.innerHTML = '--<small>分</small>'; el.dataset.k = 'idle';
+      $('dOkD').textContent = '深度合格 --'; $('dOkR').textContent = '速率合格 --'; return; }
+    el.innerHTML = sc + '<small>分</small>';
+    el.dataset.k = sc >= 80 ? 'ok' : sc >= 60 ? 'warn' : 'bad';
+    $('dOkD').textContent = '深度合格 ' + Math.round(100 * S.okD / S.count) + '%';
+    $('dOkR').textContent = '速率合格 ' + (S.nR ? Math.round(100 * S.okR / S.nR) + '%' : '--');
+  }
+  function paintNote() {
+    var n = $('rNote');
+    if (S.mode === 'demo') n.textContent = '示範模式：這是模擬數據，並非實際感測結果。訓練結束後才會顯示評分。';
+    else if (S.mode === 'sensor') n.textContent = '依手機加速度計估算，深度僅供參考。訓練結束後才會顯示評分。';
+    else if (S.mode === 'done') n.textContent = '訓練已結束。' + (S.lastWasDemo ? '（示範數據，並非實際感測結果）' : '深度為估算值，僅供參考。');
+    else n.textContent = '按「開始感測」後，把手機放在假人胸口、雙手掌下方開始按壓。';
+  }
+
+  /* ---------- 按壓事件（感測與示範共用） ---------- */
+  function onCompression(tms, depth) {
+    S.bottoms.push(tms); if (S.bottoms.length > 6) S.bottoms.shift();
+    var rate = null;
+    if (S.bottoms.length >= 3) {
+      rate = 60000 * (S.bottoms.length - 1) / (S.bottoms[S.bottoms.length - 1] - S.bottoms[0]);
+    }
+    S.depths.push(depth); if (S.depths.length > 3) S.depths.shift();
+    var avgD = S.depths.reduce(function (a, b) { return a + b; }, 0) / S.depths.length;
+    S.count++;
+    if (avgD >= DEPTH_MIN && avgD <= DEPTH_MAX) S.okD++;
+    if (rate != null) { S.nR++; if (rate >= RATE_MIN && rate <= RATE_MAX) S.okR++; }
+    S.lastRate = rate; S.lastDepth = avgD;
+    $('vCount').textContent = S.count;
+    paintTiles(avgD, rate);
+    paintResult();
+  }
+
+  /* ---------- 按壓偵測：位移 → 波峰/波谷 ---------- */
+  var D = { phase: 'up', peak: 0, trough: 0, troughT: 0 };
+  var THR = 1.0;       // 反向超過 1 公分才確認一個動作
+  var wave = [];       // {t, x}
+  function feed(xc, now) {
+    wave.push({ t: now, x: xc });
+    while (wave.length && now - wave[0].t > 4000) wave.shift();
+    if (D.phase === 'up') {
+      if (xc > D.peak) { D.peak = xc; D.peakT = now; }
+      else if (D.peak - xc > THR) { D.phase = 'down'; D.trough = xc; D.troughT = now; }
+      else if (now - (D.peakT || 0) > 1500) { D.peak = xc; D.peakT = now; }   // 超過 1.5 秒沒有新波峰，視為閒置，重設基準
+    } else {
+      if (xc < D.trough) { D.trough = xc; D.troughT = now; }
+      else if (xc - D.trough > THR) {
+        var depth = D.peak - D.trough;
+        if (depth >= 2.0 && depth < 12 && D.troughT - S.lastBottom > 270) {
+          S.lastBottom = D.troughT;
+          onCompression(D.troughT, depth);
+        }
+        D.phase = 'up'; D.peak = xc; D.peakT = now;
+      }
+    }
+  }
+
+  /* ---------- 真實感測：加速度計二次積分 ---------- */
+  var G = null, vel = 0, pos = 0, lastTs = 0;
+  function onMotion(e) {
+    if (S.mode !== 'sensor') return;
+    var a = e.accelerationIncludingGravity;
+    if (!a || a.x == null) return;
+    gotMotion = true;
+    var sign = isIOS ? -1 : 1, ax = a.x * sign, ay = a.y * sign, az = a.z * sign;
+    var now = performance.now(), dt = (now - lastTs) / 1000; lastTs = now;
+    if (!G) { G = { x: ax, y: ay, z: az }; return; }
+    if (dt <= 0 || dt > 0.2) return;
+    var k = 1 - Math.exp(-dt / (S.prep ? 0.4 : 1.5));      // 倒數期間讓重力基準快速收斂
+    G.x += k * (ax - G.x); G.y += k * (ay - G.y); G.z += k * (az - G.z);
+    if (S.prep) { vel = 0; pos = 0; return; }
+    var gm = Math.sqrt(G.x * G.x + G.y * G.y + G.z * G.z) || 9.81;
+    var up = (ax * G.x + ay * G.y + az * G.z) / gm - gm;      // 垂直向上的加速度 m/s²
+    if (Math.abs(up) < 0.12) up = 0;
+    vel = (vel + up * dt) * Math.exp(-dt / 0.6);
+    pos = (pos + vel * dt) * Math.exp(-dt / 0.6);
+    feed(pos * 100 * S.calib, now);
+  }
+
+  /* ---------- 示範模式：模擬按壓，走同一套偵測 ---------- */
+  var demoTimer = null, demo = null;
+  function demoStep() {
+    var now = performance.now(), dt = (now - demo.last) / 1000; demo.last = now;
+    var el = (now - S.t0) / 1000;
+    var rate = 111 + 6 * Math.sin(el / 9) + 3 * Math.sin(el / 3.1);
+    var depth = 5.4 + 0.5 * Math.sin(el / 6.5) + 0.2 * Math.sin(el / 1.7);
+    demo.phi += dt * rate / 60;
+    var x = (depth / 2) * Math.cos(2 * Math.PI * demo.phi) + (Math.random() - .5) * 0.12;
+    feed(x, now);
+  }
+
+  /* ---------- 流程控制 ---------- */
+  function resetSession() {
+    S.count = 0; S.nR = 0; S.okD = 0; S.okR = 0; S.bottoms = []; S.depths = []; S.lastBottom = 0;
+    S.lastRate = null; S.lastDepth = null; S.t0 = performance.now(); S.endAt = 0; S.lastWasDemo = false;
+    S.prep = false; $('prep').hidden = true;
+    D = { phase: 'up', peak: 0, trough: 0, troughT: 0 }; wave = [];
+    G = null; vel = 0; pos = 0; lastTs = performance.now(); gotMotion = false;
+    $('vCount').textContent = '0'; $('vTime').textContent = fmtTime(S.dur * 1000);
+    paintTiles(null, null); paintResult();
+  }
+  function releaseAll() {
+    window.removeEventListener('devicemotion', onMotion);
+    if (demoTimer) { clearInterval(demoTimer); demoTimer = null; }
+    if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+  }
+  function wantWake() {
+    try { if (navigator.wakeLock) navigator.wakeLock.request('screen').then(function (l) { wakeLock = l; }, function () {}); } catch (e) {}
+  }
+  function begin(mode) {
+    releaseAll(); resetSession(); S.mode = mode; showMsg('');
+    setStatus(mode, mode === 'sensor' ? '感測中' : '示範中');
+    $('btnMain').textContent = mode === 'demo' ? '開始感測' : '結束訓練';
+    $('btnDemo').textContent = mode === 'demo' ? '停止示範' : '示範模式';
+    $('lTime').textContent = '剩餘時間'; paintSeg();
+    paintNote(); wantWake();
+  }
+  function cancelPrep() {
+    releaseAll(); S.prep = false; $('prep').hidden = true; showMsg('');
+    S.mode = 'idle'; setStatus('idle', '待機');
+    $('btnMain').textContent = '開始感測'; $('btnDemo').textContent = '示範模式';
+    $('lTime').textContent = '訓練時間'; $('vTime').textContent = fmtTime(S.dur * 1000);
+    paintSeg(); paintNote();
+  }
+  function endPrep() {
+    S.prep = false; $('prep').hidden = true; if (gotMotion) showMsg('');
+    S.t0 = performance.now(); S.lastBottom = 0; S.bottoms = []; S.depths = [];
+    D = { phase: 'up', peak: 0, trough: 0, troughT: 0 }; wave = []; vel = 0; pos = 0;
+    setStatus('sensor', '感測中'); $('lTime').textContent = '剩餘時間';
+  }
+  function finish(timeUp) {
+    if (S.prep) { cancelPrep(); return; }
+    var wasDemo = S.mode === 'demo';
+    releaseAll(); S.endAt = timeUp === true ? S.t0 + S.dur * 1000 : performance.now(); S.lastWasDemo = wasDemo;
+    S.mode = 'done'; setStatus('done', '已結束');
+    $('btnMain').textContent = wasDemo ? '開始感測' : '重新開始'; $('btnDemo').textContent = '示範模式';
+    $('vTime').textContent = fmtTime(S.endAt - S.t0); $('lTime').textContent = '訓練時間'; paintSeg();
+    paintResult(); paintNote();
+  }
+  async function startSensor() {
+    if (typeof DeviceMotionEvent === 'undefined') {
+      showMsg('這個瀏覽器讀不到動作感測器。請改用手機的 Safari 或 Chrome 開啟。'); return;
+    }
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+      try {
+        var r = await DeviceMotionEvent.requestPermission();
+        if (r !== 'granted') { showMsg('沒有取得動作感測權限。請到「設定 > Safari > 動作與方向取用權」開啟後再試。'); return; }
+      } catch (err) { showMsg('無法要求動作感測權限，請用 Safari 直接開啟網頁（需 https）。'); return; }
+    }
+    begin('sensor');
+    S.prep = true; S.prepEnd = performance.now() + 5000;
+    $('prepN').textContent = '5'; $('prep').hidden = false;
+    setStatus('prep', '準備中'); $('lTime').textContent = '訓練時間';
+    showMsg('請把手機放在假人胸口並保持不動，倒數 5 秒後開始按壓。');
+    window.addEventListener('devicemotion', onMotion);
+    setTimeout(function () {
+      if (S.mode === 'sensor' && !gotMotion) {
+        showMsg('沒有收到感測資料。在這個預覽畫面中，手機感測器會被擋住。請把檔案存到手機後直接開啟，或先按「示範模式」看運作畫面。');
+      }
+    }, 2200);
+  }
+  function startDemo() {
+    begin('demo'); demo = { phi: 0.5, last: performance.now() };
+    demoTimer = setInterval(demoStep, 16);
+  }
+  $('btnMain').addEventListener('click', function () {
+    if (S.mode === 'sensor') finish(); else startSensor();
+  });
+  $('btnDemo').addEventListener('click', function () {
+    if (S.mode === 'demo') finish(); else startDemo();
+  });
+
+  /* ---------- 節拍器 110 次/分 ---------- */
+  var ac = null, beatTimer = null, beatOn = false;
+  function beep() {
+    if (!ac) return;
+    var o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.value = 880; o.type = 'sine';
+    g.gain.setValueAtTime(0.0001, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.35, ac.currentTime + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.07);
+    o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime + 0.08);
+    $('beatHint').textContent = '●'; setTimeout(function () { $('beatHint').textContent = ''; }, 90);
+  }
+  $('btnBeat').addEventListener('click', function () {
+    beatOn = !beatOn; this.setAttribute('aria-pressed', beatOn ? 'true' : 'false');
+    if (beatOn) {
+      try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.resume) ac.resume(); } catch (e) { ac = null; }
+      beep(); beatTimer = setInterval(beep, 60000 / 110);
+    } else { clearInterval(beatTimer); beatTimer = null; $('beatHint').textContent = ''; }
+  });
+
+  /* ---------- 計時與波形繪製 ---------- */
+  function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  var cv = $('wave'), cx = cv.getContext('2d');
+  function draw() {
+    var w = cv.width, h = cv.height, now = performance.now();
+    cx.clearRect(0, 0, w, h);
+    cx.strokeStyle = cssVar('--line'); cx.lineWidth = 2;
+    cx.beginPath(); cx.moveTo(0, h / 2); cx.lineTo(w, h / 2); cx.stroke();
+    var active = S.mode === 'sensor' || S.mode === 'demo';
+    if (active && wave.length > 1) {
+      var scale = h / 10;                       // 整個高度 = 10 公分
+      cx.strokeStyle = cssVar('--wave'); cx.lineWidth = 4; cx.lineJoin = 'round'; cx.beginPath();
+      for (var i = 0; i < wave.length; i++) {
+        var px = w - (now - wave[i].t) / 4000 * w;
+        var py = h / 2 - Math.max(-5, Math.min(5, wave[i].x)) * scale;
+        if (i === 0) cx.moveTo(px, py); else cx.lineTo(px, py);
+      }
+      cx.stroke();
+    }
+    if (active) {
+      if (S.prep) {
+        var left = S.prepEnd - now;
+        if (left <= 0) endPrep(); else $('prepN').textContent = String(Math.ceil(left / 1000));
+      }
+      var remain = S.prep ? S.dur * 1000 : S.dur * 1000 - (now - S.t0);
+      $('vTime').textContent = fmtTime(Math.max(0, remain) + 999);
+      if (remain <= 0) finish(true);
+      if (S.bottoms.length && now - S.bottoms[S.bottoms.length - 1] > 2500 && S.lastRate != null) {
+        S.lastRate = null; S.bottoms = []; S.depths = []; paintTiles(null, null);
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+
+  if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
+
+  /* 一開啟就跑示範，讓畫面一開始就看得到運作狀態 */
+  startDemo();
+})();
+</script>
+
+</body></html>
